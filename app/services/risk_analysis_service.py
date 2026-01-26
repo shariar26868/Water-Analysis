@@ -133,7 +133,7 @@ class RiskAnalysisService:
         """
         organic_keywords = [
             "bod", "cod", "toc", "pesticide", "herbicide",
-            "voc", "benzene", "toluene", "phenol"
+            "voc", "benzene", "toluene", "phenol", "chloroform", "dioxin"
         ]
         
         organic_compounds = []
