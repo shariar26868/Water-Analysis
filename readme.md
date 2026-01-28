@@ -316,7 +316,7 @@ MIT License - See LICENSE file
 
 For issues or questions:
 - Open an issue on GitHub
-- Email: support@waterquality.com
+- Email: semonshaikat702@gmail.com
 - Documentation: `/api/docs`
 
 ---
