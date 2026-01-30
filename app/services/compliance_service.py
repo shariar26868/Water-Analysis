@@ -1,7 +1,9 @@
+
 """
-Compliance Service - Check regulatory compliance
-WHO, EPA, Bangladesh standards
-100% Dynamic - Standards from database
+Compliance Service - Check regulatory compliance - FIXED VERSION
+✅ Fixed value mapping for TDS, Sulphate
+✅ Proper parameter matching
+✅ Better status determination
 """
 
 import logging
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ComplianceService:
-    """Check water quality compliance against standards"""
+    """Check water quality compliance against standards - FIXED VERSION"""
     
     async def check_compliance(
         self,
@@ -21,25 +23,7 @@ class ComplianceService:
         chemical_status: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Check compliance against all standards
-        
-        Returns:
-            {
-                "items": [
-                    {
-                        "parameter": "pH",
-                        "standard": "WHO",
-                        "status": "Passed",
-                        "actual_value": 7.8,
-                        "required_value": "6.5-8.5"
-                    },
-                    ...
-                ],
-                "overall_compliance": 92.3,
-                "passed_count": 12,
-                "failed_count": 1,
-                "pending_count": 0
-            }
+        Check compliance against all standards - FIXED
         """
         try:
             logger.info("✓ Checking compliance against standards")
@@ -62,8 +46,8 @@ class ComplianceService:
                 standard = rule.get('standard', 'WHO')
                 requirement = rule.get('requirement', {})
                 
-                # Find parameter
-                param_key = self._find_parameter(parameters, param_name)
+                # ✅ FIXED: Better parameter finding
+                param_key = self._find_parameter_enhanced(parameters, param_name)
                 
                 if not param_key:
                     # Parameter not tested
@@ -79,6 +63,19 @@ class ComplianceService:
                     continue
                 
                 actual_value = parameters[param_key].get("value")
+                
+                # ✅ Check if value is valid
+                if actual_value is None or not isinstance(actual_value, (int, float)):
+                    items.append({
+                        "parameter": param_name,
+                        "standard": standard,
+                        "status": "Pending",
+                        "actual_value": None,
+                        "required_value": self._format_requirement(requirement),
+                        "remarks": "Invalid or missing value"
+                    })
+                    pending += 1
+                    continue
                 
                 # Check compliance
                 status, remarks = self._check_requirement(actual_value, requirement)
@@ -98,6 +95,8 @@ class ComplianceService:
                     "required_value": self._format_requirement(requirement),
                     "remarks": remarks
                 })
+                
+                logger.info(f"✓ {param_name}: {actual_value} → {status}")
             
             # Calculate overall compliance percentage
             total = passed + failed
@@ -162,7 +161,7 @@ class ComplianceService:
         """
         Format requirement as string
         
-        Example: "6.5-8.5" or "< 10" or "> 5"
+        Example: "6.5-8.5" or "≤ 10" or "≥ 5"
         """
         min_val = requirement.get('min')
         max_val = requirement.get('max')
@@ -176,16 +175,59 @@ class ComplianceService:
         else:
             return "Not specified"
     
-    def _find_parameter(self, parameters: Dict, search_name: str) -> str:
-        """Find parameter key (case-insensitive)"""
-        search_lower = search_name.lower().replace("_", " ")
+    def _find_parameter_enhanced(self, parameters: Dict, search_name: str) -> str:
+        """
+        ✅ FIXED: Enhanced parameter finding with multiple strategies
+        
+        Handles:
+        - TDS vs Total_Dissolved_Solids
+        - Sulfate vs Sulphate
+        - Case insensitive matching
+        - Underscore/space variations
+        """
+        # Strategy 1: Direct match (case insensitive)
+        for key in parameters.keys():
+            if key.lower() == search_name.lower():
+                return key
+        
+        # Strategy 2: Partial match (normalized)
+        search_normalized = search_name.lower().replace("_", "").replace(" ", "").replace("-", "")
         
         for key in parameters.keys():
-            key_lower = key.lower().replace("_", " ")
+            key_normalized = key.lower().replace("_", "").replace(" ", "").replace("-", "")
+            
+            if search_normalized == key_normalized:
+                return key
+        
+        # Strategy 3: Contains match
+        search_lower = search_name.lower()
+        
+        for key in parameters.keys():
+            key_lower = key.lower()
             
             if search_lower in key_lower or key_lower in search_lower:
                 return key
         
+        # Strategy 4: Special aliases
+        aliases = {
+            "tds": ["total_dissolved_solids", "totaldissolvedsolids", "dissolved_solids"],
+            "sulfate": ["sulphate", "so4"],
+            "sulphate": ["sulfate", "so4"],
+            "bacteria_count": ["total_coliform", "coliform", "bacteria"],
+            "hardness": ["total_hardness", "totalhardness"],
+            "turbidity": ["turb"],
+        }
+        
+        search_lower = search_name.lower().replace("_", "").replace(" ", "")
+        
+        if search_lower in aliases:
+            for alias in aliases[search_lower]:
+                for key in parameters.keys():
+                    key_normalized = key.lower().replace("_", "").replace(" ", "")
+                    if alias in key_normalized or key_normalized in alias:
+                        return key
+        
+        # Not found
         return None
     
     def _get_default_rules(self) -> List[Dict]:

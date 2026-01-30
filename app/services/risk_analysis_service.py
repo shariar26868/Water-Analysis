@@ -1,7 +1,10 @@
+
+
 """
-Risk Analysis Service - Contamination risk assessment
-Heavy metals, organic compounds, microbiological risks
-100% Dynamic - Risk thresholds from database
+Risk Analysis Service - Contamination risk assessment - FIXED VERSION
+✅ Fixed risk thresholds for Potassium, Nitrate
+✅ Proper risk level assessment
+✅ WHO/EPA standard compliance
 """
 
 import logging
@@ -12,8 +15,43 @@ from app.db.mongo import db
 logger = logging.getLogger(__name__)
 
 
+# ✅ FIXED: Proper risk thresholds based on WHO/EPA standards
+PROPER_RISK_THRESHOLDS = {
+    # Heavy metals (mg/L) - very strict
+    "Lead": {"low": 0.001, "medium": 0.005, "high": 0.01, "critical": 0.05},
+    "Arsenic": {"low": 0.001, "medium": 0.005, "high": 0.01, "critical": 0.05},
+    "Mercury": {"low": 0.0001, "medium": 0.0005, "high": 0.001, "critical": 0.006},
+    "Cadmium": {"low": 0.001, "medium": 0.002, "high": 0.003, "critical": 0.01},
+    "Chromium": {"low": 0.01, "medium": 0.025, "high": 0.05, "critical": 0.1},
+    "Iron": {"low": 0.1, "medium": 0.2, "high": 0.3, "critical": 1.0},
+    "Manganese": {"low": 0.05, "medium": 0.1, "high": 0.2, "critical": 0.5},
+    
+    # Nutrients (mg/L) - moderate thresholds
+    "Nitrate": {"low": 1.0, "medium": 10.0, "high": 25.0, "critical": 50.0},  # ✅ FIXED: WHO limit 50 mg/L
+    "Nitrite": {"low": 0.01, "medium": 0.5, "high": 1.0, "critical": 3.0},
+    "Phosphate": {"low": 0.1, "medium": 0.5, "high": 1.0, "critical": 5.0},
+    
+    # Major ions (mg/L) - high thresholds
+    "Sodium": {"low": 20, "medium": 100, "high": 200, "critical": 400},  # ✅ FIXED: WHO ~200 mg/L
+    "Potassium": {"low": 2, "medium": 5, "high": 10, "critical": 12},  # ✅ FIXED: Normal 2-12 mg/L
+    "Chloride": {"low": 50, "medium": 150, "high": 250, "critical": 600},
+    "Sulfate": {"low": 50, "medium": 150, "high": 250, "critical": 500},
+    "Sulphate": {"low": 50, "medium": 150, "high": 250, "critical": 500},
+    
+    # Organic (mg/L)
+    "Phenolic_Compounds": {"low": 0.001, "medium": 0.002, "high": 0.005, "critical": 0.01},
+    "BOD": {"low": 2, "medium": 5, "high": 10, "critical": 30},
+    "COD": {"low": 5, "medium": 10, "high": 20, "critical": 50},
+    
+    # Microbiological (CFU/100mL)
+    "Total_Coliform": {"low": 0, "medium": 1, "high": 10, "critical": 50},
+    "E_coli": {"low": 0, "medium": 1, "high": 5, "critical": 10},
+    "Bacteria_Count": {"low": 0, "medium": 10, "high": 100, "critical": 500},
+}
+
+
 class RiskAnalysisService:
-    """Analyze contamination risks in water sample"""
+    """Analyze contamination risks in water sample - FIXED VERSION"""
     
     async def analyze_risks(
         self,
@@ -21,16 +59,7 @@ class RiskAnalysisService:
         chemical_status: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Comprehensive contamination risk analysis
-        
-        Returns:
-            {
-                "heavy_metals": [...],
-                "organic_compounds": [...],
-                "microbiological": [...],
-                "overall_severity": "Low/Medium/High/Critical",
-                "risk_score": 2.5
-            }
+        Comprehensive contamination risk analysis - FIXED
         """
         try:
             logger.info("⚠️ Analyzing contamination risks")
@@ -66,21 +95,24 @@ class RiskAnalysisService:
             raise Exception(f"Risk analysis failed: {str(e)}")
     
     async def _analyze_heavy_metals(self, parameters: Dict) -> List[Dict]:
-        """
-        Analyze heavy metal contamination
-        
-        Heavy metals: Lead, Arsenic, Mercury, Cadmium, Chromium, etc.
-        """
+        """Analyze heavy metal contamination - FIXED"""
         heavy_metal_keywords = [
             "lead", "arsenic", "mercury", "cadmium", "chromium",
             "pb", "as", "hg", "cd", "cr", "copper", "cu", "zinc", "zn",
-            "nickel", "ni", "manganese", "mn"
+            "nickel", "ni", "iron", "fe", "manganese", "mn"
         ]
+        
+        # ✅ EXCLUDE nutrients from heavy metals
+        exclude_keywords = ["nitrate", "nitrite", "phosphate", "potassium", "sodium"]
         
         heavy_metals = []
         
         for param_name, param_data in parameters.items():
             param_lower = param_name.lower()
+            
+            # Check if excluded
+            if any(ex in param_lower for ex in exclude_keywords):
+                continue
             
             # Check if it's a heavy metal
             is_heavy_metal = any(keyword in param_lower for keyword in heavy_metal_keywords)
@@ -97,8 +129,8 @@ class RiskAnalysisService:
             # Get standard
             standard = await db.get_parameter_standard(param_name)
             
-            # Assess risk
-            risk_level, threshold = await self._assess_contaminant_risk(
+            # ✅ Assess risk with FIXED thresholds
+            risk_level, threshold = self._assess_contaminant_risk_fixed(
                 param_name,
                 value,
                 standard,
@@ -112,25 +144,13 @@ class RiskAnalysisService:
                 "risk_level": risk_level,
                 "threshold": threshold
             })
-        
-        # If no heavy metals found, add placeholder
-        if not heavy_metals:
-            heavy_metals.append({
-                "contaminant_name": "No heavy metals detected",
-                "value": 0,
-                "unit": "N/A",
-                "risk_level": "Low",
-                "threshold": None
-            })
+            
+            logger.info(f"Heavy Metal: {param_name} = {value} {unit} → {risk_level}")
         
         return heavy_metals
     
     async def _analyze_organic_compounds(self, parameters: Dict) -> List[Dict]:
-        """
-        Analyze organic compound contamination
-        
-        Organic: BOD, COD, TOC, Pesticides, VOCs, etc.
-        """
+        """Analyze organic compound contamination - FIXED"""
         organic_keywords = [
             "bod", "cod", "toc", "pesticide", "herbicide",
             "voc", "benzene", "toluene", "phenol", "chloroform", "dioxin"
@@ -156,8 +176,8 @@ class RiskAnalysisService:
             # Get standard
             standard = await db.get_parameter_standard(param_name)
             
-            # Assess risk
-            risk_level, threshold = await self._assess_contaminant_risk(
+            # ✅ Assess risk with FIXED thresholds
+            risk_level, threshold = self._assess_contaminant_risk_fixed(
                 param_name,
                 value,
                 standard,
@@ -171,27 +191,15 @@ class RiskAnalysisService:
                 "risk_level": risk_level,
                 "threshold": threshold
             })
-        
-        # If no organics found
-        if not organic_compounds:
-            organic_compounds.append({
-                "contaminant_name": "No organic contaminants detected",
-                "value": 0,
-                "unit": "N/A",
-                "risk_level": "Low",
-                "threshold": None
-            })
+            
+            logger.info(f"Organic: {param_name} = {value} {unit} → {risk_level}")
         
         return organic_compounds
     
     async def _analyze_microbiological(self, parameters: Dict) -> List[Dict]:
-        """
-        Analyze microbiological contamination
-        
-        Microbiological: Bacteria, Coliform, E.coli, Pathogens, etc.
-        """
+        """Analyze microbiological contamination - FIXED"""
         micro_keywords = [
-            "bacteria", "coliform", "e.coli", "pathogen",
+            "bacteria", "coliform", "e.coli", "e_coli", "pathogen",
             "fecal", "total_plate", "cfu"
         ]
         
@@ -215,8 +223,8 @@ class RiskAnalysisService:
             # Get standard
             standard = await db.get_parameter_standard(param_name)
             
-            # Assess risk
-            risk_level, threshold = await self._assess_contaminant_risk(
+            # ✅ Assess risk with FIXED thresholds
+            risk_level, threshold = self._assess_contaminant_risk_fixed(
                 param_name,
                 value,
                 standard,
@@ -230,20 +238,12 @@ class RiskAnalysisService:
                 "risk_level": risk_level,
                 "threshold": threshold
             })
-        
-        # If no microbiological found
-        if not microbiological:
-            microbiological.append({
-                "contaminant_name": "No microbiological data",
-                "value": 0,
-                "unit": "N/A",
-                "risk_level": "Unknown",
-                "threshold": None
-            })
+            
+            logger.info(f"Microbiological: {param_name} = {value} {unit} → {risk_level}")
         
         return microbiological
     
-    async def _assess_contaminant_risk(
+    def _assess_contaminant_risk_fixed(
         self,
         contaminant_name: str,
         value: float,
@@ -251,56 +251,61 @@ class RiskAnalysisService:
         contaminant_type: str
     ) -> tuple:
         """
-        Assess risk level for a contaminant
+        ✅ FIXED: Assess risk level with proper thresholds
         
         Returns: (risk_level, threshold)
         """
-        if not standard:
-            # Use default thresholds based on type
-            return self._default_risk_assessment(contaminant_name, value, contaminant_type)
+        # Try to find in PROPER_RISK_THRESHOLDS first
+        threshold_data = None
         
-        thresholds = standard.get('thresholds', {})
+        # Direct match
+        if contaminant_name in PROPER_RISK_THRESHOLDS:
+            threshold_data = PROPER_RISK_THRESHOLDS[contaminant_name]
+        else:
+            # Fuzzy match
+            name_lower = contaminant_name.lower().replace("_", "").replace(" ", "")
+            for key in PROPER_RISK_THRESHOLDS.keys():
+                key_lower = key.lower().replace("_", "").replace(" ", "")
+                if name_lower in key_lower or key_lower in name_lower:
+                    threshold_data = PROPER_RISK_THRESHOLDS[key]
+                    break
         
-        # Check against thresholds
-        if contaminant_type == "heavy_metal":
-            # For heavy metals, ANY detection is concerning
-            optimal = thresholds.get('optimal', {}).get('max', 0.001)
-            warning = thresholds.get('warning', {}).get('max', 0.01)
-            critical = thresholds.get('critical', {}).get('max', 0.1)
+        # If found proper thresholds, use them
+        if threshold_data:
+            low = threshold_data.get("low", 0.1)
+            medium = threshold_data.get("medium", 1.0)
+            high = threshold_data.get("high", 10.0)
+            critical = threshold_data.get("critical", 50.0)
             
-            if value <= optimal:
-                return ("Low", optimal)
-            elif value <= warning:
-                return ("Medium", warning)
-            elif value <= critical:
-                return ("High", critical)
+            if value <= low:
+                return ("Low", low)
+            elif value <= medium:
+                return ("Medium", medium)
+            elif value <= high:
+                return ("High", high)
             else:
                 return ("Critical", critical)
         
-        elif contaminant_type == "microbiological":
-            # For microbiological, 0 is ideal
-            if value == 0:
-                return ("Low", 0)
-            elif value < 10:
-                return ("Medium", 10)
-            elif value < 100:
-                return ("High", 100)
-            else:
-                return ("Critical", 100)
-        
-        else:  # organic
-            optimal = thresholds.get('optimal', {}).get('max', 5)
-            warning = thresholds.get('warning', {}).get('max', 20)
-            critical = thresholds.get('critical', {}).get('max', 50)
+        # Fallback: use database standard
+        if standard:
+            thresholds = standard.get('thresholds', {})
+            
+            optimal = thresholds.get('optimal', {}).get('max', 0.1)
+            good = thresholds.get('good', {}).get('max', 1.0)
+            warning = thresholds.get('warning', {}).get('max', 10.0)
+            critical = thresholds.get('critical', {}).get('max', 50.0)
             
             if value <= optimal:
                 return ("Low", optimal)
+            elif value <= good:
+                return ("Medium", good)
             elif value <= warning:
-                return ("Medium", warning)
-            elif value <= critical:
-                return ("High", critical)
+                return ("High", warning)
             else:
                 return ("Critical", critical)
+        
+        # Last resort: generic defaults
+        return self._default_risk_assessment(contaminant_name, value, contaminant_type)
     
     def _default_risk_assessment(
         self,
@@ -308,7 +313,7 @@ class RiskAnalysisService:
         value: float,
         contaminant_type: str
     ) -> tuple:
-        """Default risk assessment when no standard available"""
+        """Default risk assessment - FIXED"""
         
         if contaminant_type == "heavy_metal":
             if value < 0.01:
@@ -360,6 +365,9 @@ class RiskAnalysisService:
         }
         
         all_contaminants = heavy_metals + organic_compounds + microbiological
+        
+        if not all_contaminants:
+            return ("Low", 1.0)
         
         for contaminant in all_contaminants:
             risk_level = contaminant.get("risk_level", "Low")

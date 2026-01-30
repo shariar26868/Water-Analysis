@@ -1,9 +1,11 @@
 
 
 """
-Graph Service - Generate and modify water quality graphs
-Uses Matplotlib + GPT-4 for prompt-based modifications
-100% Dynamic - No hard-coded thresholds
+Graph Service - 100% DYNAMIC VERSION
+✅ NO hard-coded parameters
+✅ AI determines status for unknown parameters
+✅ Fallback to database first, then AI
+✅ Production ready
 """
 
 import os
@@ -14,7 +16,7 @@ from datetime import datetime
 from io import BytesIO
 
 import matplotlib
-matplotlib.use('Agg')  # Non-GUI backend
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class GraphService:
-    """Generate dynamic water quality graphs"""
+    """Generate dynamic water quality graphs - 100% AI-powered"""
     
     def __init__(self):
         self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -43,6 +45,9 @@ class GraphService:
         # Set style
         sns.set_style("whitegrid")
         plt.rcParams['figure.dpi'] = 300
+        
+        # ✅ Cache for AI-determined statuses (to avoid repeated API calls)
+        self._status_cache = {}
     
     async def create_parameter_graph(
         self, 
@@ -50,19 +55,18 @@ class GraphService:
         chemical_status: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Create parameter comparison bar graph with auto-colored bars
-        
-        Colors based on dynamic thresholds from database
+        Create parameter comparison bar graph
+        100% Dynamic - uses AI to determine colors
         """
         try:
-            logger.info("📊 Creating parameter comparison graph")
+            logger.info("📊 Creating parameter comparison graph (AI-powered)")
             
-            # Get graph template from database
+            # Get template
             template = await db.get_graph_template("parameter_comparison_bar")
             if not template:
                 template = self._get_default_template()
             
-            # Extract numeric parameters only
+            # Extract numeric parameters
             numeric_params = {}
             for param_name, param_data in parameters.items():
                 value = param_data.get("value")
@@ -70,14 +74,22 @@ class GraphService:
                     numeric_params[param_name] = value
             
             if not numeric_params:
-                raise Exception("No numeric parameters found for graphing")
+                raise Exception("No numeric parameters found")
             
-            # Determine status and color for each parameter
+            # ✅ Determine status and color dynamically
+            logger.info(f"🤖 Evaluating {len(numeric_params)} parameters with AI...")
+            
             color_mapping = {}
-            for param_name in numeric_params.keys():
-                status = await self._get_parameter_status(param_name, numeric_params[param_name])
-                color = await self._get_color_for_status(status, template)
+            status_mapping = {}
+            
+            for param_name, value in numeric_params.items():
+                status = await self._get_parameter_status_dynamic(param_name, value)
+                color = self._get_color_for_status(status, template)
+                
                 color_mapping[param_name] = color
+                status_mapping[param_name] = status
+                
+                logger.info(f"✅ {param_name} = {value} → {status} ({color})")
             
             # Create graph
             fig, ax = plt.subplots(figsize=tuple(template['default_config']['figsize']))
@@ -87,9 +99,16 @@ class GraphService:
             colors = [color_mapping[name] for name in param_names]
             
             # Create bars
-            bars = ax.bar(param_names, values, color=colors, edgecolor='black', linewidth=1.5, alpha=0.8)
+            bars = ax.bar(
+                param_names, 
+                values, 
+                color=colors, 
+                edgecolor='black', 
+                linewidth=1.5, 
+                alpha=0.85
+            )
             
-            # Add value labels on bars
+            # Add value labels
             for bar, value in zip(bars, values):
                 height = bar.get_height()
                 ax.text(
@@ -120,16 +139,14 @@ class GraphService:
                 pad=20
             )
             
-            # Rotate x-axis labels
             plt.xticks(rotation=template['default_config']['rotation'], ha='right', fontsize=10)
             
-            # Grid
             if template['default_config']['grid']:
                 ax.grid(axis='y', alpha=0.3, linestyle='--')
             
             plt.tight_layout()
             
-            # Save to buffer
+            # Save
             buffer = BytesIO()
             plt.savefig(buffer, format='png', dpi=template['default_config']['dpi'], bbox_inches='tight')
             buffer.seek(0)
@@ -143,15 +160,12 @@ class GraphService:
             return {
                 "graph_url": graph_url,
                 "graph_type": "parameter_comparison_bar",
-                "color_mapping": {
-                    name: await self._get_parameter_status(name, numeric_params[name])
-                    for name in param_names
-                },
+                "color_mapping": status_mapping,
                 "created_at": datetime.utcnow()
             }
             
         except Exception as e:
-            logger.error(f"❌ Graph creation failed: {e}")
+            logger.exception("❌ Graph creation failed")
             raise Exception(f"Graph creation failed: {str(e)}")
     
     async def modify_with_prompt(
@@ -162,14 +176,17 @@ class GraphService:
     ) -> Dict[str, Any]:
         """
         Modify graph colors using natural language prompt
-        
-        Example: "Make pH bar green and TDS bar red"
         """
         try:
-            logger.info(f"🎨 Modifying graph with prompt: {prompt}")
+            logger.info(f"🎨 Modifying graph with prompt: '{prompt}'")
             
-            # Parse intent using GPT-4
+            # Parse intent
             color_changes = await self._parse_color_intent(prompt, parameters.keys())
+            
+            if not color_changes:
+                logger.warning("⚠️ No color changes detected, using auto colors")
+            else:
+                logger.info(f"✅ Color changes: {color_changes}")
             
             # Get template
             template = await db.get_graph_template("parameter_comparison_bar")
@@ -183,28 +200,38 @@ class GraphService:
                 if isinstance(value, (int, float)):
                     numeric_params[param_name] = value
             
-            # Apply custom colors
+            # Apply colors
             color_mapping = {}
-            for param_name in numeric_params.keys():
+            
+            for param_name, value in numeric_params.items():
                 if param_name in color_changes:
-                    # Use custom color from prompt
+                    # Custom color from prompt
                     color_mapping[param_name] = self._resolve_color_name(
                         color_changes[param_name],
                         template
                     )
+                    logger.info(f"🎨 {param_name}: custom color '{color_changes[param_name]}'")
                 else:
-                    # Use auto color
-                    status = await self._get_parameter_status(param_name, numeric_params[param_name])
-                    color_mapping[param_name] = await self._get_color_for_status(status, template)
+                    # Auto color based on AI status
+                    status = await self._get_parameter_status_dynamic(param_name, value)
+                    color_mapping[param_name] = self._get_color_for_status(status, template)
+                    logger.info(f"🤖 {param_name}: auto color '{status}'")
             
-            # Create graph with custom colors
+            # Create graph
             fig, ax = plt.subplots(figsize=tuple(template['default_config']['figsize']))
             
             param_names = list(numeric_params.keys())
             values = list(numeric_params.values())
             colors = [color_mapping[name] for name in param_names]
             
-            bars = ax.bar(param_names, values, color=colors, edgecolor='black', linewidth=1.5, alpha=0.8)
+            bars = ax.bar(
+                param_names, 
+                values, 
+                color=colors, 
+                edgecolor='black', 
+                linewidth=1.5, 
+                alpha=0.85
+            )
             
             # Add value labels
             for bar, value in zip(bars, values):
@@ -219,7 +246,7 @@ class GraphService:
                     fontweight='bold'
                 )
             
-            # Styling (same as before)
+            # Styling
             ax.set_xlabel(template['default_config']['xlabel'], fontsize=12, fontweight='bold')
             ax.set_ylabel(template['default_config']['ylabel'], fontsize=12, fontweight='bold')
             ax.set_title(template['default_config']['title'], fontsize=14, fontweight='bold', pad=20)
@@ -236,10 +263,10 @@ class GraphService:
             buffer.seek(0)
             plt.close(fig)
             
-            # Upload to S3
+            # Upload
             graph_url = await self._upload_to_s3(buffer, f"parameter_comparison_{report_id}_modified")
             
-            logger.info(f"✅ Modified graph created: {graph_url}")
+            logger.info(f"✅ Modified graph created")
             
             return {
                 "graph_url": graph_url,
@@ -250,65 +277,205 @@ class GraphService:
             }
             
         except Exception as e:
-            logger.error(f"❌ Graph modification failed: {e}")
+            logger.exception("❌ Graph modification failed")
             raise Exception(f"Graph modification failed: {str(e)}")
     
-    async def _parse_color_intent(self, prompt: str, available_params: list) -> Dict[str, str]:
+    # =====================================================
+    # 🤖 AI-POWERED DYNAMIC STATUS DETERMINATION
+    # =====================================================
+    async def _get_parameter_status_dynamic(self, param_name: str, value: float) -> str:
         """
-        Use GPT-4 to parse natural language color modification request
+        ✅ 100% DYNAMIC - No hard-coding
         
-        Returns:
-            {"pH": "green", "TDS": "red", ...}
+        Strategy:
+        1. Try database first
+        2. If not in DB, ask AI
+        3. Cache result to avoid repeated API calls
+        
+        Returns: "optimal", "good", "warning", "critical"
+        """
+        # Check cache first
+        cache_key = f"{param_name}:{value}"
+        if cache_key in self._status_cache:
+            logger.debug(f"📦 Cache hit: {param_name}")
+            return self._status_cache[cache_key]
+        
+        # Strategy 1: Try database
+        standard = await db.get_parameter_standard(param_name)
+        
+        if standard:
+            logger.debug(f"💾 Database standard found for {param_name}")
+            status = self._evaluate_with_thresholds(value, standard.get('thresholds', {}))
+            self._status_cache[cache_key] = status
+            return status
+        
+        # Strategy 2: Ask AI
+        logger.info(f"🤖 No DB standard for {param_name}, asking AI...")
+        status = await self._ai_determine_status(param_name, value)
+        
+        # Cache the result
+        self._status_cache[cache_key] = status
+        
+        return status
+    
+    def _evaluate_with_thresholds(self, value: float, thresholds: Dict) -> str:
+        """Evaluate value against threshold ranges"""
+        for level in ['optimal', 'good', 'warning', 'critical']:
+            threshold = thresholds.get(level, {})
+            
+            if not threshold:
+                continue
+            
+            min_val = threshold.get('min', float('-inf'))
+            max_val = threshold.get('max', float('inf'))
+            
+            if min_val <= value <= max_val:
+                return level
+        
+        return "good"  # Default
+    
+    async def _ai_determine_status(self, param_name: str, value: float) -> str:
+        """
+        ✅ Ask GPT-4o to determine parameter status
+        
+        Returns: "optimal", "good", "warning", or "critical"
         """
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": f"""Parse color modification request for water quality graph.
-Available parameters: {list(available_params)}
-Valid colors: red, green, blue, yellow, orange, purple, optimal, good, warning, critical
+                        "content": """You are a water quality expert. Evaluate water quality parameters for drinking water safety.
 
-Return ONLY valid JSON: {{"parameter_name": "color_name"}}
-Example: {{"pH": "green", "TDS": "red"}}"""
+Return ONLY one word from: optimal, good, warning, critical
+
+Definitions:
+- optimal: Ideal/best quality for drinking water
+- good: Acceptable/safe for drinking water
+- warning: Concerning/needs attention
+- critical: Dangerous/unsafe for drinking water
+
+Base your judgment on WHO, EPA, and international drinking water standards."""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Parameter: {param_name}\nValue: {value} mg/L\n\nStatus?"
+                    }
+                ],
+                temperature=0,
+                max_tokens=10
+            )
+            
+            status = response.choices[0].message.content.strip().lower()
+            
+            # Validate response
+            valid_statuses = ['optimal', 'good', 'warning', 'critical']
+            
+            if status not in valid_statuses:
+                logger.warning(f"⚠️ AI returned invalid status '{status}', using 'good'")
+                status = 'good'
+            
+            logger.info(f"🤖 AI: {param_name}={value} → {status}")
+            
+            return status
+            
+        except Exception as e:
+            logger.error(f"❌ AI status determination failed: {e}")
+            return "good"  # Safe fallback
+    
+    # =====================================================
+    # COLOR INTENT PARSING
+    # =====================================================
+    async def _parse_color_intent(self, prompt: str, available_params: list) -> Dict[str, str]:
+        """
+        Parse natural language color modification request
+        
+        Returns: {"pH": "green", "TDS": "red", ...}
+        """
+        try:
+            logger.info(f"🔍 Parsing prompt: '{prompt}'")
+            
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"""You are a color parser for water quality graphs.
+
+Available parameters: {', '.join(list(available_params))}
+
+Valid colors:
+- Status: optimal, good, warning, critical
+- Named: red, green, blue, yellow, orange, purple, pink, brown, gray
+
+Parse the user's request and return ONLY a JSON object.
+
+Rules:
+1. Return ONLY valid JSON, no explanation
+2. Use exact parameter names
+3. If unclear, return empty: {{}}
+
+Examples:
+"make pH green" → {{"pH": "green"}}
+"color TDS red and Calcium blue" → {{"TDS": "red", "Calcium": "blue"}}
+"make a bar chart" → {{}}
+"""
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                temperature=0
+                temperature=0,
+                max_tokens=500
             )
             
-            content = response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
             
-            # Remove markdown if present
-            if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
-                content = content.strip()
+            if not content:
+                return {}
             
+            logger.debug(f"GPT: {content}")
+            
+            # Clean response
+            content = content.strip()
+            
+            # Remove markdown
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            
+            # Find JSON
+            if not content.startswith("{"):
+                import re
+                match = re.search(r'\{[^}]+\}', content)
+                if match:
+                    content = match.group(0)
+                else:
+                    return {}
+            
+            # Parse
             color_changes = json.loads(content)
             
-            logger.info(f"🎨 Parsed color changes: {color_changes}")
+            if not isinstance(color_changes, dict):
+                return {}
             
+            logger.info(f"✅ Parsed: {color_changes}")
             return color_changes
             
         except Exception as e:
-            logger.error(f"❌ Failed to parse color intent: {e}")
+            logger.error(f"❌ Parse failed: {e}")
             return {}
     
     def _resolve_color_name(self, color_name: str, template: Dict) -> str:
-        """
-        Resolve color name to hex code
-        
-        Supports: "red", "green", "optimal", "warning", etc.
-        """
+        """Resolve color name to hex code"""
         color_scheme = template.get('color_scheme', {})
         
-        # Check if it's a status color
+        color_name = color_name.lower().strip()
+        
+        # Check status colors
         if color_name in color_scheme:
             return color_scheme[color_name]
         
@@ -317,95 +484,60 @@ Example: {{"pH": "green", "TDS": "red"}}"""
         if color_name in custom_colors:
             return custom_colors[color_name]
         
-        # Default
-        return '#757575'  # Gray
+        # Common colors
+        common = {
+            'red': '#F44336',
+            'green': '#4CAF50',
+            'blue': '#2196F3',
+            'yellow': '#FFC107',
+            'orange': '#FF9800',
+            'purple': '#9C27B0',
+            'pink': '#E91E63',
+            'brown': '#795548',
+            'gray': '#757575',
+            'grey': '#757575'
+        }
+        
+        return common.get(color_name, '#757575')
     
-    async def _get_parameter_status(self, param_name: str, value: float) -> str:
-        """
-        Get parameter status from database thresholds
-        
-        Returns: "optimal", "good", "warning", or "critical"
-        """
-        # Get parameter standard from database
-        standard = await db.get_parameter_standard(param_name)
-        
-        if not standard:
-            logger.warning(f"⚠️ No standard found for {param_name}, using 'good' as default")
-            return "good"
-        
-        thresholds = standard.get('thresholds', {})
-        
-        # Check each level
-        for level in ['optimal', 'good', 'warning', 'critical']:
-            threshold = thresholds.get(level, {})
-            
-            min_val = threshold.get('min', float('-inf'))
-            max_val = threshold.get('max', float('inf'))
-            
-            if min_val <= value <= max_val:
-                return level
-        
-        return "unknown"
-    
-    async def _get_color_for_status(self, status: str, template: Dict) -> str:
+    def _get_color_for_status(self, status: str, template: Dict) -> str:
         """Get hex color for status"""
         color_scheme = template.get('color_scheme', {})
         return color_scheme.get(status, '#757575')
     
     # =====================================================
-    # 🔧 FIXED: S3 Upload without ACL + Pre-signed URL
+    # S3 UPLOAD
     # =====================================================
     async def _upload_to_s3(self, buffer: BytesIO, filename_prefix: str) -> str:
-        """
-        Upload graph image to S3 and return pre-signed URL
-        
-        FIXED: Removed ACL (not supported), using pre-signed URLs instead
-        
-        Args:
-            buffer: Image buffer
-            filename_prefix: Prefix for filename
-            
-        Returns:
-            Pre-signed URL (valid for 7 days)
-        """
+        """Upload to S3 and return pre-signed URL (7 days)"""
         try:
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             key = f"graphs/{filename_prefix}_{timestamp}.png"
             
-            # ✅ FIXED: Upload WITHOUT ACL parameter
             self.s3_client.upload_fileobj(
                 buffer,
                 self.bucket_name,
                 key,
-                ExtraArgs={
-                    'ContentType': 'image/png'
-                    # ❌ REMOVED: 'ACL': 'public-read'
-                }
+                ExtraArgs={'ContentType': 'image/png'}
             )
             
-            logger.info(f"✅ Uploaded to S3: {key}")
+            logger.info(f"✅ S3: {key}")
             
-            # ✅ Generate pre-signed URL (valid for 7 days = 604800 seconds)
             url = self.s3_client.generate_presigned_url(
                 'get_object',
-                Params={
-                    'Bucket': self.bucket_name,
-                    'Key': key
-                },
+                Params={'Bucket': self.bucket_name, 'Key': key},
                 ExpiresIn=604800  # 7 days
             )
             
-            logger.info(f"✅ Generated pre-signed URL (expires in 7 days)")
-            
             return url
             
-        except ClientError as e:
-            logger.error(f"❌ S3 upload failed: {e}")
-            raise Exception(f"S3 upload failed: {str(e)}")
         except Exception as e:
-            logger.error(f"❌ Unexpected S3 error: {e}")
-            raise Exception(f"S3 upload error: {str(e)}")
+            logger.error(f"❌ S3 failed: {e}")
+            raise Exception(f"S3 upload failed: {str(e)}")
     
+    # =====================================================
+    # DEFAULT TEMPLATE
+    # =====================================================
     def _get_default_template(self) -> Dict:
         """Default graph template"""
         return {
@@ -420,18 +552,21 @@ Example: {{"pH": "green", "TDS": "red"}}"""
                 "grid": True
             },
             "color_scheme": {
-                "optimal": "#4CAF50",     # Green
-                "good": "#8BC34A",        # Light Green
-                "warning": "#FFC107",     # Yellow
-                "critical": "#F44336",    # Red
-                "unknown": "#757575",     # Gray
+                "optimal": "#4CAF50",     # Green - Best
+                "good": "#8BC34A",        # Light Green - Safe
+                "warning": "#FFC107",     # Yellow - Caution
+                "critical": "#F44336",    # Red - Danger
+                "unknown": "#757575",     # Gray - Unknown
                 "custom_colors": {
                     "red": "#F44336",
                     "green": "#4CAF50",
                     "blue": "#2196F3",
                     "yellow": "#FFC107",
                     "orange": "#FF9800",
-                    "purple": "#9C27B0"
+                    "purple": "#9C27B0",
+                    "pink": "#E91E63",
+                    "brown": "#795548",
+                    "gray": "#757575"
                 }
             }
         }

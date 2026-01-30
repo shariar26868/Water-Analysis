@@ -2,6 +2,7 @@
 """
 Pydantic Models for Request/Response Validation
 Fully dynamic - no hard-coded parameter lists
+WITH Chemical Formula Support
 """
 
 from pydantic import BaseModel, Field, validator
@@ -10,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 
 
-# ========== ENUMS ========== (Same as before)
+# ========== ENUMS ==========
 
 class StatusEnum(str, Enum):
     optimal = "optimal"
@@ -27,7 +28,7 @@ class ComplianceStatusEnum(str, Enum):
     not_applicable = "N/A"
 
 
-# ========== EXTRACTED PARAMETER ========== (No change needed)
+# ========== EXTRACTED PARAMETER ==========
 
 class ExtractedParameter(BaseModel):
     """Single extracted parameter from PDF"""
@@ -45,7 +46,7 @@ class ExtractedParameter(BaseModel):
         }
 
 
-# ========== CHEMICAL STATUS ========== (No change)
+# ========== CHEMICAL STATUS ==========
 
 class SaturationIndex(BaseModel):
     """Saturation index for a mineral"""
@@ -64,7 +65,7 @@ class ChemicalStatus(BaseModel):
     database_used: str
 
 
-# ========== GRAPH ========== (No change)
+# ========== GRAPH ==========
 
 class GraphResponse(BaseModel):
     """Graph generation response"""
@@ -88,7 +89,7 @@ class GraphModifyRequest(BaseModel):
         }
 
 
-# ========== SCORING ========== (No change)
+# ========== SCORING ==========
 
 class ScoreComponent(BaseModel):
     """Individual score component"""
@@ -106,7 +107,7 @@ class TotalScore(BaseModel):
     components: List[ScoreComponent]
 
 
-# ========== WATER QUALITY REPORT ========== (No change)
+# ========== WATER QUALITY REPORT ==========
 
 class WaterQualityIndex(BaseModel):
     """Water Quality Index"""
@@ -137,15 +138,44 @@ class QualityReport(BaseModel):
 
 
 # ========== CHEMICAL COMPOSITION ========== 
-# 🔧 FIXED: unit is now Optional
+# ✅ UPDATED: Added chemical formula fields
 
 class CompositionParameter(BaseModel):
-    """Single composition parameter"""
+    """Single composition parameter with chemical formula support"""
     parameter_name: str
     value: float
-    unit: Optional[str] = ""  # ✅ FIXED: Optional with default empty string
+    unit: Optional[str] = ""  # ✅ Optional with default empty string
     status: StatusEnum
     threshold: Optional[Dict[str, Any]] = None
+    
+    # ✅ NEW: Chemical formula fields
+    chemical_symbol: Optional[str] = None           # "Ca"
+    chemical_formula: Optional[str] = None          # "Ca²⁺"
+    ionic_form: Optional[str] = None                # "Ca2+"
+    as_compound: Optional[str] = None               # "CaCO₃"
+    as_compound_value: Optional[float] = None       # Converted value as CaCO3
+    molecular_weight: Optional[float] = None        # 40.078
+    charge: Optional[int] = None                    # 2
+    category: Optional[str] = None                  # "major_cation"
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "parameter_name": "Calcium",
+                "value": 85.5,
+                "unit": "mg/L",
+                "status": "good",
+                "threshold": {"optimal": {"min": 0, "max": 100}},
+                "chemical_symbol": "Ca",
+                "chemical_formula": "Ca²⁺",
+                "ionic_form": "Ca2+",
+                "as_compound": "CaCO₃",
+                "as_compound_value": 213.52,
+                "molecular_weight": 40.078,
+                "charge": 2,
+                "category": "major_cation"
+            }
+        }
 
 
 class ChemicalComposition(BaseModel):
@@ -154,7 +184,7 @@ class ChemicalComposition(BaseModel):
     summary: str
 
 
-# ========== BIOLOGICAL INDICATORS ========== (No change)
+# ========== BIOLOGICAL INDICATORS ==========
 
 class BiologicalIndicator(BaseModel):
     """Single biological indicator"""
@@ -171,7 +201,7 @@ class BiologicalReport(BaseModel):
     overall_status: str
 
 
-# ========== COMPLIANCE CHECKLIST ========== (No change)
+# ========== COMPLIANCE CHECKLIST ==========
 
 class ComplianceItem(BaseModel):
     """Single compliance checklist item"""
@@ -192,7 +222,7 @@ class ComplianceChecklist(BaseModel):
     pending_count: int
 
 
-# ========== CONTAMINATION RISK ========== (No change)
+# ========== CONTAMINATION RISK ==========
 
 class ContaminantRisk(BaseModel):
     """Single contaminant risk"""
@@ -213,7 +243,6 @@ class ContaminationRisk(BaseModel):
 
 
 # ========== COMPLETE ANALYSIS RESPONSE ========== 
-# 🔧 FIXED: Added date validator
 
 class WaterAnalysisResponse(BaseModel):
     """Complete water analysis response (all 10 features)"""
@@ -253,7 +282,7 @@ class WaterAnalysisResponse(BaseModel):
     sample_date: Optional[datetime] = None
     created_at: datetime
     
-    # ✅ ADDED: Date validator
+    # ✅ Date validator
     @validator('sample_date', pre=True)
     def parse_sample_date(cls, v):
         """Parse sample_date from various string formats"""
@@ -292,7 +321,7 @@ class WaterAnalysisResponse(BaseModel):
         }
 
 
-# ========== API REQUESTS ========== (Same as before)
+# ========== API REQUESTS ==========
 
 class AnalyzeRequest(BaseModel):
     """Request for water analysis (file uploaded separately)"""
@@ -318,7 +347,7 @@ class RecalculateRequest(BaseModel):
         }
 
 
-# ========== REPORT HISTORY ========== (Same)
+# ========== REPORT HISTORY ==========
 
 class ReportSummary(BaseModel):
     """Summary for report history list"""
@@ -338,7 +367,7 @@ class ReportHistoryResponse(BaseModel):
     page_size: int
 
 
-# ========== ERROR RESPONSES ========== (Same)
+# ========== ERROR RESPONSES ==========
 
 class ErrorResponse(BaseModel):
     """Standard error response"""
@@ -347,7 +376,7 @@ class ErrorResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
-# ========== PARAMETER STANDARD (Admin) ========== (Same)
+# ========== PARAMETER STANDARD (Admin) ==========
 
 class ParameterStandard(BaseModel):
     """Parameter threshold standard"""
@@ -359,7 +388,7 @@ class ParameterStandard(BaseModel):
     health_impact: Optional[Dict[str, str]] = None
 
 
-# ========== CALCULATION FORMULA (Admin) ========== (Same)
+# ========== CALCULATION FORMULA (Admin) ==========
 
 class CalculationFormula(BaseModel):
     """Calculation formula definition"""
