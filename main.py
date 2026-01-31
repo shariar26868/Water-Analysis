@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import logging
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Import database
 from app.db.mongo import db
