@@ -7796,16 +7796,39 @@ class PHREEQCService:
     VALID_CATION_BALANCE = ["Na", "K"]
     VALID_ANION_BALANCE  = ["Cl", "SO4"]
 
+    # def __init__(self):
+    #     self.phreeqc_executable = os.getenv(
+    #         "PHREEQC_PATH",
+    #         os.path.join(os.path.dirname(__file__), "..", "..", "phreeqc", "phreeqc.exe")
+    #         if os.name == "nt"
+    #         else "/usr/local/bin/phreeqc"
+    #     )
+    #     self.phreeqc_dat  = os.getenv("PHREEQC_DAT_PATH",  "phreeqc.dat")
+    #     self.pitzer_dat   = os.getenv("PITZER_DAT_PATH",    "pitzer.dat")
+    #     self._verified    = self._verify_phreeqc()
     def __init__(self):
+    # ✅ Read paths from .env with correct variable names
         self.phreeqc_executable = os.getenv(
-            "PHREEQC_PATH",
+            "PHREEQC_EXECUTABLE_PATH",  # ← Changed from PHREEQC_PATH
             os.path.join(os.path.dirname(__file__), "..", "..", "phreeqc", "phreeqc.exe")
             if os.name == "nt"
             else "/usr/local/bin/phreeqc"
         )
-        self.phreeqc_dat  = os.getenv("PHREEQC_DAT_PATH",  "phreeqc.dat")
-        self.pitzer_dat   = os.getenv("PITZER_DAT_PATH",    "pitzer.dat")
-        self._verified    = self._verify_phreeqc()
+        
+        # ✅ Database path from .env
+        database_path = os.getenv(
+            "PHREEQC_DATABASE_PATH",
+            os.path.join(os.path.dirname(__file__), "..", "..", "phreeqc", "database")
+        )
+        
+        default_db = os.getenv("PHREEQC_DEFAULT_DATABASE", "phreeqc.dat")
+        pitzer_db = os.getenv("PHREEQC_PITZER_DATABASE", "pitzer.dat")
+        
+        # ✅ Full paths to database files
+        self.phreeqc_dat = os.path.join(database_path, default_db)
+        self.pitzer_dat = os.path.join(database_path, pitzer_db)
+        
+        self._verified = self._verify_phreeqc()
 
     # ========================================
     # VERIFY PHREEQC (Windows-safe)

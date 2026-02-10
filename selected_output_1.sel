@@ -1,2 +1,2 @@
-          pH	          pe	        temp	         Alk	          mu	      charge	    si_CaCO3	
-     7.39509	           4	      25.000	   0.0023988	  0.00619423	  0.00100142	   -999.9990	
+         sim	       state	        soln	      dist_x	        time	        step	          pH	          pe	          mu	      charge	
+           1	      i_soln	           1	         -99	         -99	         -99	           7	           4	 1.00661e-07	-1.21651e-09	
